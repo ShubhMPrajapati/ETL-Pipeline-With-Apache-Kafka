@@ -1,0 +1,41 @@
+import org.apache.spark.sql._
+import org.apache.spark.sql.functions._
+import org.apache.spark.sql.types._
+
+// Define schema for news articles
+val newsArticleSchema = new StructType(Array(
+  StructField("author", StringType, true),
+  StructField("content", StringType, true),
+  StructField("description", StringType, true),
+  StructField("publishedAt", StringType, true),
+  StructField("source",
+    StructType(Array(
+      StructField("id", StringType, true),
+      StructField("name", StringType, true)
+    )),
+    true),
+  StructField("title", StringType, true),
+  StructField("url", StringType, true),
+  StructField("urlToImage", StringType, true)
+))
+
+// Read data from Kafka
+val kafkaDf = spark.readStream.format("kafka")
+  .option("kafka.bootstrap.servers", "localhost:9092")
+  .option("subscribe", "finalProject")
+  .load()
+
+// Parse Kafka data as JSON
+val newsDf = kafkaDf.selectExpr("CAST(value AS STRING) as json")
+  .select(from_json(col("json"), newsArticleSchema).as("data"))
+  .select("data.*")
+
+// Write raw data to JSON sink
+val rawJsonStream = newsDf.writeStream
+  .format("json")
+  .option("checkpointLocation", "file:////home/shubham90days/chkpts1")
+  .outputMode("append")
+  .option("path", "file:////home/shubham90days/raw_json")
+  .start()
+
+rawJsonStream.awaitTermination()

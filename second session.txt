@@ -1,0 +1,58 @@
+import org.apache.spark.sql._
+import org.apache.spark.sql.functions._
+import org.apache.spark.sql.types._
+
+// Defining schema for news articles
+val newsArticleSchema = new StructType(Array(
+  StructField("author", StringType, true),
+  StructField("content", StringType, true),
+  StructField("description", StringType, true),
+  StructField("publishedAt", StringType, true),
+  StructField("source",
+    StructType(Array(
+      StructField("id", StringType, true),
+      StructField("name", StringType, true)
+    )),
+    true),
+  StructField("title", StringType, true),
+  StructField("url", StringType, true),
+  StructField("urlToImage", StringType, true)
+))
+
+val sparkHive = SparkSession.builder()
+  .appName("Spark session with Hive")
+  .config("spark.sql.warehouse.dir", "/user/hive/warehouse")
+  .config("hive.exec.dynamic.partition", "true")
+  .config("hive.exec.dynamic.partition.mode", "nonstrict")
+  .enableHiveSupport()
+  .getOrCreate()
+
+// Read raw JSON data
+val rawNewsDf = sparkHive.readStream
+  .format("json")
+  .schema(newsArticleSchema)
+  .option("path", "file:////home/shubham90days/raw_json")
+  .load()
+
+// Selecting required columns
+val processedNewsDf = rawNewsDf.select(
+  col("author"),
+  col("content"),
+  col("description"),
+  col("publishedAt"),
+  col("source.id").as("source_id"),
+  col("source.name").as("source_name"),
+  col("title"),
+  col("url"),
+  col("urlToImage")
+)
+
+// Write the data directly to the Hive table (no partitioning)
+val hiveTableStream = processedNewsDf.writeStream
+  .format("parquet")
+  .option("checkpointLocation", "file:////home/shubham90days/chkpts2")
+  .outputMode("append")
+  .option("path", "/user/hive/warehouse/news_database.db/news_articles1")
+  .start()
+
+hiveTableStream.awaitTermination()
